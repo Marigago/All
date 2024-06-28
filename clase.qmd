@@ -1,0 +1,40 @@
+---
+title: "Clase"
+format: html
+editor: visual
+---
+
+## Tarea
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+```
+
+```{r}
+aus_accommodation
+
+aus_accommodation_long <- aus_accommodation  |>
+  pivot_longer(cols = Takings:CPI, names_to = "variable", values_to = "valor")
+  
+aus_accommodation_long|>
+  features(valor,
+           list(media = mean,
+                desv_std = sd,
+                minimo = min,
+                maximo = max,
+                mediana = median)
+  )
+  # pivot_wider(names_from = variable, values_from = c(media, desv_std, minimo, maximo, mediana))
+```
+
+```{r}
+aus_accommodation_long|>
+  features(valor, feat_stl)
+```
+
+```{r}
+aus_accommodation_long|>
+  features(valor, guerrero)
+```

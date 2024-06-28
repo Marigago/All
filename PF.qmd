@@ -1,0 +1,2178 @@
+---
+title: "PF"
+format: html
+editor: visual
+---
+
+```{r}
+# Cargar la librería necesaria
+#| message: false
+library(tidyverse)
+library(tsibble)
+library(lubridate)
+library(ggplot2)
+library(readr)
+library(fable)
+library(fpp3)
+library(patchwork)
+library(dplyr)
+library(tictoc)
+```
+
+```{r}
+# Definir la ruta del archivo
+archivo <- "C:/Users/maria/Desktop/Segundo_periodo/ST/ST/train.csv/train.csv"
+
+# Leer el archivo CSV
+datos <- read_csv(archivo)
+datos$date <- as.Date(datos$date)
+
+# Ver los primeros registros del dataframe
+datos
+```
+
+```{r}
+datos_tsb <- datos |>
+  as_tsibble(index=date, key=c(store_nbr, family))
+```
+
+```{r}
+unique(datos$family)
+unique(datos$store_nbr)
+```
+
+```{r}
+datos_tsb <- datos_tsb |> 
+  fill_gaps(.full = TRUE, 
+            sales = 0L, 
+            onpromotion = 0L,
+            sales= 0L )
+
+datos_tsb
+```
+
+```{r}
+tic()
+datos_tsb|>
+  ggplot(aes(x=date, y=sales))+
+  geom_line()
+
+Mod <- datos_tsb |> 
+  group_by() |> 
+  summarise(sales_sum = sum(sales, na.rm = TRUE)) |>  # Sumar los valores de 'sales' por grupo
+  model(STL(sales_sum, robust = TRUE))|># Aplicar el modelo STL a los valores sumados
+  components() |> 
+  autoplot()
+Mod
+toc()
+
+```
+
+```{r}
+tic()
+# Obtener la lista de familias
+familias <- unique(datos_tsb$family)
+
+# Crear una lista para almacenar los gráficos
+graficos <- list()
+
+# Iterar sobre cada familia
+for (familia in familias) {
+  # Filtrar los datos para la familia actual
+  datos_familia <- datos_tsb %>%
+    filter(family == familia)
+  
+  # Crear el gráfico para la familia actual
+  grafico <- ggplot(datos_familia, aes(x = date, y = sales)) +
+    geom_line() +
+    labs(x = "Fecha", y = "Ventas", title = paste("Serie de tiempo de ventas", familia))
+  
+  # Almacenar el gráfico en la lista
+  graficos[[familia]] <- grafico
+}
+
+# Mostrar los gráficos
+library(purrr)
+walk(graficos, print)
+toc()
+```
+
+```{r}
+library(purrr)
+
+# Función para generar gráfico STL por cada familia
+generar_graficos_STL <- function(datos_tsb) {
+
+  # Obtener lista de familias únicas
+  familias_unicas <- unique(datos_tsb$family)
+  
+  # Generar gráfico STL por cada familia
+  graficos_stl <- map(familias_unicas, function(familia) {
+    datos_familia <- datos_tsb %>%
+      filter(family == familia)
+    
+    M <- datos_familia %>%
+      summarise(sales_sum = sum(sales, na.rm = TRUE)) %>%
+      model(STL(sales_sum, robust = TRUE)) |>  
+      components() %>%
+      autoplot() +
+      ggtitle(paste("Descomposición STL para la familia:", familia))
+    
+    return(M)
+  })
+  
+  return(graficos_stl)
+}
+
+# Ejemplo de uso de la función
+graficos_stl_por_familia <- generar_graficos_STL(datos_tsb)
+print(graficos_stl_por_familia)
+
+
+
+```
+
+```{r}
+library(purrr)
+library(ggplot2)
+library(forecast)
+
+# Función para generar gráfico PACF por cada familia
+generar_graficos_PACF <- function(datos_tsb) {
+
+  # Obtener lista de familias únicas
+  familias_unicas <- unique(datos_tsb$family)
+  
+  # Generar gráfico PACF por cada familia
+  graficos_pacf <- map(familias_unicas, function(familia) {
+    datos_familia <- datos_tsb %>%
+      filter(family == familia) %>%
+      summarise(sales_sum = sum(sales, na.rm = TRUE))
+    
+    M <- Acf(datos_familia$sales_sum, type="partial", plot=FALSE) %>%
+      autoplot() +
+      ggtitle(paste("Gráfico de autocorrelación parcial para la familia:", familia))
+    
+    return(M)
+  })
+  
+  return(graficos_pacf)
+}
+
+# Ejemplo de uso de la función
+graficos_pacf_por_familia <- generar_graficos_PACF(datos_tsb)
+print(graficos_pacf_por_familia)
+
+
+```
+
+```{r}
+library(purrr)
+library(ggplot2)
+library(forecast)
+
+# Función para generar gráfico ACF por cada familia
+generar_graficos_ACF <- function(datos_tsb) {
+
+  # Obtener lista de familias únicas
+  familias_unicas <- unique(datos_tsb$family)
+  
+  # Generar gráfico ACF por cada familia
+  graficos_acf <- map(familias_unicas, function(familia) {
+    datos_familia <- datos_tsb %>%
+      filter(family == familia) %>%
+      summarise(sales_sum = sum(sales, na.rm = TRUE))
+    
+    M <- Acf(datos_familia$sales_sum, type="correlation", plot=FALSE) %>%
+      autoplot() +
+      ggtitle(paste("Gráfico de autocorrelación para la familia:", familia))
+    
+    return(M)
+  })
+  
+  return(graficos_acf)
+}
+
+# Ejemplo de uso de la función
+graficos_acf_por_familia <- generar_graficos_ACF(datos_tsb)
+print(graficos_acf_por_familia)
+
+```
+
+```{r}
+
+matriz_cor <- cor(datos$onpromotion, datos$sales)
+matriz_cor
+```
+
+```{r}
+
+transactions <- read_csv("C:/Users/maria/Downloads/transactions.csv/transactions.csv")
+
+oil <- read_csv("C:/Users/maria/Downloads/oil.csv")
+
+transactions$date <- as.Date(transactions$date)
+
+# Crea la tsibble sumando las transacciones por día
+ts_transactions <- transactions %>%
+  group_by(date) %>%
+  summarise(total_transacciones = sum(transactions))
+
+# Muestra las primeras filas para verificar que se haya creado correctamente
+transactions
+oil
+oil$date <- as.Date(oil$date)
+
+# Ordena el dataset por fecha en caso de que no esté ordenado
+oil <- oil[order(oil$date), ]
+
+oil_filled <- oil %>%
+  fill(dcoilwtico, .direction = "down") %>%
+  fill(dcoilwtico, .direction = "up")
+
+# Muestra las primeras filas para verificar que se haya llenado correctamente
+oil_filled
+ts_transactions
+
+datos_suma <- datos %>%
+  group_by(date) %>%
+  summarise(total_sales = sum(sales))
+
+# Paso 2: Unir los datasets por fecha
+merged_data <- merge(merge(oil_filled, ts_transactions, by = "date"), datos_suma, by = "date")
+
+merged_data
+
+# Paso 3: Calcular la matriz de correlación
+correlation_matrix <- cor(merged_data[c("dcoilwtico", "total_transacciones", "total_sales")])
+
+# Mostrar la matriz de correlación
+print(correlation_matrix)
+```
+
+```{r}
+
+tic()
+# Obtener la lista de familias
+stores <- unique(datos_tsb$store_nbr)
+
+# Crear una lista para almacenar los gráficos
+graficos <- list()
+
+# Iterar sobre cada familia
+for (store in stores) {
+  # Filtrar los datos para la familia actual
+  datos_store <- datos_tsb %>%
+    filter(store_nbr == store)
+  
+  # Crear el gráfico para la familia actual
+  grafico <- ggplot(datos_store, aes(x = date, y = sales)) +
+    geom_line() +
+    labs(x = "Fecha", y = "Ventas", title = paste("Serie de tiempo de ventas", store))
+  
+  # Almacenar el gráfico en la lista
+  graficos[[store]] <- grafico
+}
+
+# Mostrar los gráficos
+library(purrr)
+walk(graficos, print)
+toc()
+```
+
+```{r}
+library(dplyr)
+library(lubridate)
+
+# Define la fecha de corte para los últimos 16 días
+fecha_corte <- max(datos_tsb$date) - days(16)
+
+# Crea el conjunto de entrenamiento excluyendo los últimos 16 días
+datos_train <- datos_tsb %>%
+  filter(date <= fecha_corte)
+
+# Crea el conjunto de prueba con solo los últimos 16 días
+datos_test <- datos_tsb %>%
+  filter(date > fecha_corte)
+
+
+datos_train_Automotive <- datos_train %>%
+  filter(family == 'AUTOMOTIVE')
+
+datos_train_BEAUTY <- datos_train %>%
+  filter(family == 'BEAUTY')
+
+datos_train_BOOKS <- datos_train %>%
+  filter(family == 'BOOKS')
+
+datos_train_BEAUTY <- datos_train %>%
+  filter(family == 'BEAUTY')
+
+datos_train_CELEBRATION <- datos_train %>%
+  filter(family == 'CELEBRATION')
+
+datos_train_DAIRY <- datos_train %>%
+  filter(family == 'DAIRY')
+
+datos_train_EGGS <- datos_train %>%
+  filter(family == 'EGGS')
+
+datos_train_GROCERYI <- datos_train %>%
+  filter(family == 'GROCERY I')
+
+datos_train_HARDWARE <- datos_train %>%
+  filter(family == 'HARDWARE')
+
+datos_train_HOMEANDKITCHENII <- datos_train %>%
+  filter(family == 'HOME AND KITCHEN II')
+
+datos_train_BABYCARE <- datos_train %>%
+  filter(family == 'BABY CARE')
+datos_train_BEVERAGES <- datos_train %>%
+  filter(family == 'BEVERAGES')
+datos_train_BREAD_BAKERY <- datos_train %>%
+  filter(family == 'BREAD/BAKERY')
+datos_train_CLEANING <- datos_train %>%
+  filter(family == 'CLEANING')
+datos_train_DELI <- datos_train %>%
+  filter(family == 'DELI')
+datos_train_FROZENFOODS <- datos_train %>%
+  filter(family == 'FROZEN FOODS')
+datos_train_GROCERYII <- datos_train %>%
+  filter(family == 'GROCERY II')
+datos_train_HOMEANDKITCHENI <- datos_train %>%
+  filter(family == 'HOME AND KITCHEN I')
+datos_train_HOMEAPPLIANCES <- datos_train %>%
+  filter(family == 'HOME APPLIANCES')
+datos_train_LADIESWEAR <- datos_train %>%
+  filter(family == 'LADIESWEAR')
+datos_train_HOMECARE <- datos_train %>%
+  filter(family == 'HOME CARE')
+datos_train_LAWNANDGARDEN <- datos_train %>%
+  filter(family == 'LAWN AND GARDEN')
+datos_train_LINGERIE <- datos_train %>%
+  filter(family == 'LINGERIE')
+datos_train_LIQUOR_WINE_BEER <- datos_train %>%
+  filter(family == 'LIQUOR,WINE,BEER')
+datos_train_MAGAZINES <- datos_train %>%
+  filter(family == 'MAGAZINES')
+datos_train_MEATS <- datos_train %>%
+  filter(family == 'MEATS')
+datos_train_PERSONALCARE <- datos_train %>%
+  filter(family == 'PERSONAL CARE')
+datos_train_PETSUPPLIES <- datos_train %>%
+  filter(family == 'PET SUPPLIES')
+datos_train_PLAYERSANDELECTRONICS <- datos_train %>%
+  filter(family == 'PLAYERS AND ELECTRONICS')
+datos_train_POULTRY <- datos_train %>%
+  filter(family == 'POULTRY')
+datos_train_PREPAREDFOODS <- datos_train %>%
+  filter(family == 'PREPARED FOODS')
+datos_train_PRODUCE <- datos_train %>%
+  filter(family == 'PRODUCE')
+datos_train_SEAFOOD <- datos_train %>%
+  filter(family == 'SEAFOOD')
+datos_train_SCHOOLANDOFFICESUPPLIES <- datos_train %>%
+  filter(family == 'SCHOOL AND OFFICE SUPPLIES')
+```
+
+```{r}
+datos_test_Automotive <- datos_test %>%
+  filter(family == 'AUTOMOTIVE')
+
+datos_test_BEAUTY <- datos_test %>%
+  filter(family == 'BEAUTY')
+
+datos_test_BOOKS <- datos_test %>%
+  filter(family == 'BOOKS')
+
+datos_test_BEAUTY <- datos_test %>%
+  filter(family == 'BEAUTY')
+
+datos_test_CELEBRATION <- datos_test %>%
+  filter(family == 'CELEBRATION')
+
+datos_test_DAIRY <- datos_test %>%
+  filter(family == 'DAIRY')
+
+datos_test_EGGS <- datos_test %>%
+  filter(family == 'EGGS')
+
+datos_test_GROCERYI <- datos_test %>%
+  filter(family == 'GROCERY I')
+
+datos_test_HARDWARE <- datos_test %>%
+  filter(family == 'HARDWARE')
+
+datos_test_HOMEANDKITCHENII <- datos_test %>%
+  filter(family == 'HOME AND KITCHEN II')
+
+datos_test_BABYCARE <- datos_test %>%
+  filter(family == 'BABY CARE')
+datos_test_BEVERAGES <- datos_test %>%
+  filter(family == 'BEVERAGES')
+datos_test_BREAD_BAKERY <- datos_test %>%
+  filter(family == 'BREAD/BAKERY')
+datos_test_CLEANING <- datos_test %>%
+  filter(family == 'CLEANING')
+datos_test_DELI <- datos_test %>%
+  filter(family == 'DELI')
+datos_test_FROZENFOODS <- datos_test %>%
+  filter(family == 'FROZEN FOODS')
+datos_test_GROCERYII <- datos_test %>%
+  filter(family == 'GROCERY II')
+datos_test_HOMEANDKITCHENI <- datos_test %>%
+  filter(family == 'HOME AND KITCHEN I')
+datos_test_HOMEAPPLIANCES <- datos_test %>%
+  filter(family == 'HOME APPLIANCES')
+datos_test_LADIESWEAR <- datos_test %>%
+  filter(family == 'LADIESWEAR')
+datos_test_HOMECARE <- datos_test %>%
+  filter(family == 'HOME CARE')
+datos_test_LAWNANDGARDEN <- datos_test %>%
+  filter(family == 'LAWN AND GARDEN')
+datos_test_LINGERIE <- datos_test %>%
+  filter(family == 'LINGERIE')
+datos_test_LIQUOR_WINE_BEER <- datos_test %>%
+  filter(family == 'LIQUOR,WINE,BEER')
+datos_test_MAGAZINES <- datos_test %>%
+  filter(family == 'MAGAZINES')
+datos_test_MEATS <- datos_test %>%
+  filter(family == 'MEATS')
+datos_test_PERSONALCARE <- datos_test %>%
+  filter(family == 'PERSONAL CARE')
+datos_test_PETSUPPLIES <- datos_test %>%
+  filter(family == 'PET SUPPLIES')
+datos_test_PLAYERSANDELECTRONICS <- datos_test %>%
+  filter(family == 'PLAYERS AND ELECTRONICS')
+datos_test_POULTRY <- datos_test %>%
+  filter(family == 'POULTRY')
+datos_test_PREPAREDFOODS <- datos_test %>%
+  filter(family == 'PREPARED FOODS')
+datos_test_PRODUCE <- datos_test %>%
+  filter(family == 'PRODUCE')
+datos_test_SEAFOOD <- datos_test %>%
+  filter(family == 'SEAFOOD')
+datos_test_SCHOOLANDOFFICESUPPLIES <- datos_test %>%
+  filter(family == 'SCHOOL AND OFFICE SUPPLIES')
+
+```
+
+```{r}
+
+##PUEBA EN DATOS PRUBE
+fitSETS <- datos_train_Automotive |> 
+  model(
+    arima111 = ARIMA(sales ~ pdq(1,1,0)),
+  )
+
+fitSETS
+
+fcst <- fitSETS |> 
+  select(c(arima111)) |> 
+  forecast(h = 16)
+
+fcst
+
+
+# Calcular los errores para cada modelo
+datos_combinados <- inner_join(fcst, datos_test_Automotive, by = c("date", "store_nbr"))
+
+errors <- datos_combinados |> 
+  mutate(
+    error_snaive = sales.x - sales.y
+  )
+
+
+# Calcular el RSMLE para cada modelo
+rsmle_snaive <- sqrt(mean((log(errors$error_snaive + 1))^2))
+
+# Imprimir el resultado
+cat("RSMLE para SNAIVE:", rsmle_snaive, "\n")
+
+###ENTRENAMIENTO FINAL
+
+
+datos_train_Automotive_full <- datos_tsb %>%
+  filter(family == 'AUTOMOTIVE')
+
+
+#UNION AL ARCHIVO
+
+test <- read_csv("C:/Users/maria/Downloads/test.csv")
+test
+
+fitSETS <- datos_train_Automotive_full |> 
+  model(
+    arima111 = ARIMA(sales ~ pdq(1,1,0))
+  )
+
+fitSETS
+
+fcst <- fitSETS |> 
+  select(c(arima111)) |> 
+  forecast(h = 16)
+
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+
+submission |> 
+  write_csv("submission.csv")
+
+
+
+```
+
+```{r}
+datos_train_BABYCARE
+datos_train_BABYCARE <- datos_tsb %>%
+  filter(date >= '2016-01-02')
+datos_train_BABYCARE
+
+library(ggplot2)
+
+# Suponiendo que 'datos_train_BABYCARE' es tu dataframe y que 'date' y 'sales' son tus columnas
+# Suma las ventas de todas las tiendas para cada fecha
+datos_agregados <- aggregate(sales ~ date, data = datos_train_BABYCARE, FUN = sum)
+
+# Crea la gráfica de la serie de tiempo
+ggplot(datos_agregados, aes(x = date, y = log(sales))) +
+  geom_line() +
+  labs(x = "Fecha", y = "Ventas", title = "Serie de tiempo de las ventas totales log")
+ggplot(datos_agregados, aes(x = date, y = sales)) +
+  geom_line() +
+  labs(x = "Fecha", y = "Ventas", title = "Serie de tiempo de las ventas totales")
+# Aplicamos la diferenciación a las ventas
+datos_agregados$diferencia_sales <- c(0, diff(log(datos_agregados$sales)))
+
+# Creamos la gráfica de la serie de tiempo diferenciada
+ggplot(datos_agregados, aes(x = date, y = diferencia_sales)) +
+  geom_line() +
+  labs(x = "Fecha", y = "Ventas Diferenciadas", title = "Serie de tiempo de las ventas totales log diferenciadas")
+
+datos_agregados
+
+
+M_fit<- datos_train_BABYCARE |>
+  model(
+      ets_ANA = ETS(log(sales+1)),
+)
+
+M_fit
+
+fcst <- M_fit |> 
+  select(c(ets_ANA)) |> 
+  forecast(h = 16)
+
+fcst
+
+
+# Calcular los errores para cada modelo
+datos_combinados <- inner_join(fcst, datos_test_BABYCARE, by = c("date", "store_nbr"))
+
+errors <- datos_combinados |> 
+  mutate(
+    error_snaive = sales.x - sales.y
+  )
+
+
+# Calcular el RSMLE para cada modelo
+rsmle_snaive <- sqrt(mean((log(errors$error_snaive + 1))^2))
+
+
+# Imprimir el resultado
+cat("RSMLE para SNAIVE:", rsmle_snaive, "\n")
+
+###ENTRENAMIENTO FINAL
+
+datos_train_BabyCare_full <- datos_tsb %>%
+  filter(family == 'BABY CARE') 
+
+M_fit<- datos_train_BabyCare_full |>
+  model(
+      ets_ANA = ARIMA(sales),
+)
+
+M_fit
+
+fcst <- M_fit |> 
+  select(c(ets_ANA)) |> 
+  forecast(h = 16)
+
+fcst
+
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+
+```
+
+```{r}
+
+##ENTRENAMIENTO PARA PROBAR MÉTODOS
+fitModel <- datos_train_BEAUTY |> 
+  model(
+    ets = ETS(log(sales+1)),
+  )
+
+#MOSTRAR LA TABLA DE MODELOS
+fitSETS
+
+##GENERAR PRONOSTICOS
+fcst <- fitSETS |> 
+  select(c(arima111, otro)) |> 
+  forecast(h = 16)
+
+##ver pronosticos
+fcst
+
+
+# Calcular los errores para cada modelo 
+datos_combinados <- inner_join(fcst, datos_test_BEAUTY, by = c("date", "store_nbr"))
+
+errors <- datos_combinados |> 
+  mutate(
+    error_snaive = sales.x - sales.y
+  )
+
+
+# Calcular el RSMLE para cada modelo
+rsmle_snaive <- sqrt(mean((log(errors$error_snaive + 1))^2))
+
+cat("RSMLE para SNAIVE:", rsmle_snaive, "\n")
+
+
+
+
+##ENTRENAMIENTO FINAL 
+#Selección de datos de entrenamiento 
+datos_train_beauty_full <- datos_tsb %>%
+  filter(family == 'BEAUTY') 
+
+#Ingresar al modelo 
+M_fit<- datos_train_beauty_full |>
+  model(
+      ets = ETS(log(sales+1)),
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+```
+
+```{r}
+fitSETS <- datos_train_BEVERAGES |> 
+  model(
+    arima111 = ETS(log(sales+1)),
+  )
+
+fitSETS
+
+fcst <- fitSETS |> 
+  select(c(arima111)) |> 
+  forecast(h = 16)
+
+fcst
+
+
+# Calcular los errores para cada modelo
+datos_combinados <- inner_join(fcst, datos_test_BEVERAGES, by = c("date", "store_nbr"))
+
+errors <- datos_combinados |> 
+  mutate(
+    error_snaive = sales.x - sales.y
+  )
+
+datos_combinados
+# Calcular el RSMLE para cada modelo
+rsmle_snaive <- sqrt(mean((log(errors$error_snaive + 1))^2))
+
+# Imprimir el resultado
+cat("RSMLE para SNAIVE:", rsmle_snaive, "\n")
+
+
+###ENTRENAMIENTO FINAL
+
+datos_train_BEVERAGES_full <- datos_tsb %>%
+  filter(family == 'BEVERAGES') |>
+  filter(date >= '2015-01-01')
+
+M_fit<- datos_train_BEVERAGES_full |>
+  model(
+      ets_ANA = ETS(log(sales+1)),
+)
+
+M_fit
+
+fcst <- M_fit |> 
+  select(c(ets_ANA)) |> 
+  forecast(h = 16)
+
+fcst
+
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+submission |>
+  write_csv("submission.csv", append = TRUE)
+```
+
+```{r}
+##ENTRENAMIENTO FINAL 
+datos_train_BOOKS_full
+#Selección de datos de entrenamiento 
+datos_train_BOOKS_full <- datos_tsb %>%
+  filter(family == 'BOOKS') |>
+  filter(date >= '2017-01-01')
+
+datos_train_BOOKS_full$sales
+  
+#Ingresar al modelo 
+M_fit<- datos_train_BOOKS_full |>
+  model(
+      ets = ETS(log(sales + 1)),
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+
+submission
+
+
+submission |>
+  write_csv("submission.csv", append = TRUE)
+```
+
+```{r}
+##ENTRENAMIENTO FINAL 
+datos_train_BREAD_BAKERY_full
+#Selección de datos de entrenamiento 
+datos_train_BREAD_BAKERY_full <- datos_tsb %>%
+  filter(family == 'BREAD/BAKERY') 
+
+
+#Ingresar al modelo 
+M_fit<- datos_train_BREAD_BAKERY_full |>
+  model(
+      arima = ARIMA(sales),
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+```
+
+```{r}
+
+#Selección de datos de entrenamiento 
+datos_train_CELEBRATION_full <- datos_tsb %>%
+  filter(family == 'CELEBRATION') |>
+  filter(date>= '2015-07-01')
+
+M_fit<- datos_train_CELEBRATION_full |>
+  model(
+      ets = ETS(log(sales+1)),
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+```
+
+```{r}
+#Selección de datos de entrenamiento 
+datos_train_CLEANING_full <- datos_tsb %>%
+  filter(family == 'CLEANING') |>
+  filter(date>= '2015-07-01')
+
+M_fit<- datos_train_CLEANING_full |>
+  model(
+    arima= ARIMA(log(sales))
+    )
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+```
+
+```{r}
+datos_train_DAIRY_full <- datos_tsb %>%
+  filter(family == 'DAIRY') |>
+  filter(date>= '2014-01-01')
+
+M_fit<- datos_train_DAIRY_full |>
+  model(
+    arima= ARIMA(log(sales))
+    )
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+```
+
+```{r}
+datos_train_DELI_full <- datos_tsb %>%
+  filter(family == 'DELI') 
+
+M_fit<- datos_train_DELI_full |>
+  model(
+    ets= ETS(log(sales)),
+    )
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+```
+
+```{r}
+datos_train_FROZEN_FOODS_full <- datos_tsb %>%
+  filter(family == 'FROZEN FOODS') 
+
+M_fit<- datos_train_FROZEN_FOODS_full |>
+  model(
+  snaive = SNAIVE(sales)    
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+```
+
+```{r}
+datos_train_GROCERY_I_full <- datos_tsb %>%
+  filter(family == 'GROCERY I') 
+
+M_fit<- datos_train_GROCERY_I_full |>
+  model(
+      ets = ETS(sales ~ error("M") + trend("A") + season("A")),
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+```
+
+```{r}
+
+datos_train_GROCERY_II_full <- datos_tsb %>%
+  filter(family == 'GROCERY II') 
+
+M_fit<- datos_train_GROCERY_II_full |>
+  model(
+      arima= ARIMA(sales),
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+```
+
+```{r}
+library(forecast)
+
+datos_train_HARDWARE_full <- datos_tsb %>%
+  filter(family == 'HARDWARE') 
+
+# Estimar el parámetro de transformación Box-Cox
+lambda <- BoxCox.lambda(datos_train_HARDWARE_full$sales)
+
+# Aplicar la transformación Box-Cox a los datos
+datos_transformados <- BoxCox(datos_train_HARDWARE_full$sales, lambda)
+
+# Ajustar el modelo ARIMA a los datos transformados
+M_fit <- datos_transformados |> 
+  model(
+    snaive = ARIMA(sales)
+  )
+
+# Hacer pronóstico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+# Aplicar la transformación inversa Box-Cox a las predicciones
+fcst$mean <- InvBoxCox(fcst$mean, lambda)
+
+# Unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+# Unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+```
+
+```{r}
+datos_train_HOME_AND_KITCHEN_I_full <- datos_tsb %>%
+  filter(family == 'HOME AND KITCHEN I') |>
+  filter(date >= '2015-01-01')
+
+M_fit<- datos_train_HOME_AND_KITCHEN_I_full |>
+  model(
+  arima= ARIMA(log(sales))
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+```
+
+```{r}
+test <- read_csv("C:/Users/maria/Downloads/test.csv")
+test
+
+datos_train_Automotive_full <- datos_tsb %>%
+  filter(family == 'AUTOMOTIVE')
+
+fitSETS <- datos_train_Automotive_full |> 
+  model(
+    arima111 = ARIMA(sales ~ pdq(1,1,0)),
+  )
+
+fitSETS
+
+fcst <- fitSETS |> 
+  select(c(arima111)) |> 
+  forecast(h = 16)
+
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+
+submission |> 
+  write_csv("submission.csv")
+
+datos_train_BabyCare_full <- datos_tsb %>%
+  filter(family == 'BABY CARE') |>
+  filter(date >= '2016-01-01')
+
+M_fit<- datos_train_BabyCare_full |>
+  model(
+      ets_ANA = ETS(log(sales+1)),
+)
+
+M_fit
+
+fcst <- M_fit |> 
+  select(c(ets_ANA)) |> 
+  forecast(h = 16)
+
+fcst
+
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_beauty_full <- datos_tsb %>%
+  filter(family == 'BEAUTY') 
+
+#Ingresar al modelo 
+M_fit<- datos_train_beauty_full |>
+  model(
+      ets = ETS(log(sales+1)),
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_BEVERAGES_full <- datos_tsb %>%
+  filter(family == 'BEVERAGES') |>
+  filter(date >= '2015-01-01')
+
+M_fit<- datos_train_BEVERAGES_full |>
+  model(
+      ets_ANA = ETS(log(sales+1)),
+)
+
+M_fit
+
+fcst <- M_fit |> 
+  select(c(ets_ANA)) |> 
+  forecast(h = 16)
+
+fcst
+
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_BOOKS_full <- datos_tsb %>%
+  filter(family == 'BOOKS') |>
+  filter(date >= '2017-01-01')
+
+datos_train_BOOKS_full$sales
+  
+#Ingresar al modelo 
+M_fit<- datos_train_BOOKS_full |>
+  model(
+      ets = ETS(log(sales + 1)),
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+
+
+
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+
+datos_train_BREAD_BAKERY_full <- datos_tsb %>%
+  filter(family == 'BREAD/BAKERY') 
+
+
+#Ingresar al modelo 
+M_fit<- datos_train_BREAD_BAKERY_full |>
+  model(
+      arima = ARIMA(sales),
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+
+
+
+#Selección de datos de entrenamiento 
+datos_train_CELEBRATION_full <- datos_tsb %>%
+  filter(family == 'CELEBRATION') |>
+  filter(date>= '2015-07-01')
+
+M_fit<- datos_train_CELEBRATION_full |>
+  model(
+      ets = ETS(log(sales+1) ~ error("A") + trend("Md") + season("A")),
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+
+#Selección de datos de entrenamiento 
+datos_train_CLEANING_full <- datos_tsb %>%
+  filter(family == 'CLEANING') |>
+  filter(date>= '2015-07-01')
+
+M_fit<- datos_train_CLEANING_full |>
+  model(
+    arima= ARIMA(log(sales+1))
+    )
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_DAIRY_full <- datos_tsb %>%
+  filter(family == 'DAIRY') |>
+  filter(date>= '2014-01-01')
+
+M_fit<- datos_train_DAIRY_full |>
+  model(
+    arima= ARIMA(log(sales+1))
+    )
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_DELI_full <- datos_tsb %>%
+  filter(family == 'DELI') 
+
+M_fit<- datos_train_DELI_full |>
+  model(
+    ets= ETS(log(sales+1)),
+    )
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_FROZEN_FOODS_full <- datos_tsb %>%
+  filter(family == 'FROZEN FOODS') 
+
+M_fit<- datos_train_FROZEN_FOODS_full |>
+  model(
+  snaive = SNAIVE(sales)    
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(snaive)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_GROCERY_I_full <- datos_tsb %>%
+  filter(family == 'GROCERY I') 
+
+M_fit<- datos_train_GROCERY_I_full |>
+  model(
+      ets = ETS(sales),
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_GROCERY_II_full <- datos_tsb %>%
+  filter(family == 'GROCERY II') 
+
+M_fit<- datos_train_GROCERY_II_full |>
+  model(
+      arima= ARIMA(sales),
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+library(forecast)
+
+datos_train_HARDWARE_full <- datos_tsb %>%
+  filter(family == 'HARDWARE') 
+
+# Estimar el parámetro de transformación Box-Cox
+datos_train_HARDWARE_full$sales_transformados <- BoxCox(datos_train_HARDWARE_full$sales, lambda)
+
+# Convertir los datos transformados en un objeto tsibble
+datos_transformados_tsbl <- as_tsibble(datos_train_HARDWARE_full, index = date)
+
+# Ajustar el modelo ARIMA a los datos transformados
+M_fit <- datos_transformados_tsbl |> 
+  model(
+    arima = ARIMA(sales_transformados)
+  )
+
+# Hacer pronóstico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+# Aplicar la transformación inversa Box-Cox a las predicciones
+fcst$.mean <- InvBoxCox(fcst$.mean, lambda)
+fcst
+# Unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+# Unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_HOME_AND_KITCHEN_I_full <- datos_tsb %>%
+  filter(family == 'HOME AND KITCHEN I') |>
+  filter(date >= '2015-01-01')
+
+M_fit<- datos_train_HOME_AND_KITCHEN_I_full |>
+  model(
+  arima= ARIMA(log(sales+1))
+)
+
+M_fit
+
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_HOME_AND_KITCHEN_II_full <- datos_tsb %>%
+  filter(family == 'HOME AND KITCHEN II') |>
+  filter(date >= '2016-01-01')
+
+datos_train_HOME_AND_KITCHEN_II_full$sales_transformados <- BoxCox(datos_train_HOME_AND_KITCHEN_II_full$sales, lambda)
+
+# Convertir los datos transformados en un objeto tsibble
+datos_transformados_tsbl <- as_tsibble(datos_train_HOME_AND_KITCHEN_II_full, index = date)
+
+# Ajustar el modelo ARIMA a los datos transformados
+M_fit <- datos_transformados_tsbl |> 
+  model(
+    arima = ARIMA(sales_transformados)
+  )
+
+# Hacer pronóstico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+# Aplicar la transformación inversa Box-Cox a las predicciones
+fcst$.mean <- InvBoxCox(fcst$.mean, lambda)
+
+# Unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+# Unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_HOME_APPLIANCES_full <- datos_tsb %>%
+  filter(family == 'HOME APPLIANCES') |>
+  filter(date >= '2015-01-01')
+
+M_fit<- datos_train_HOME_APPLIANCES_full |>
+  model(
+  arima= ARIMA(log(sales+1))
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+##ENTRENAMIENTO FINAL 
+datos_train_BOOKS_full
+#Selección de datos de entrenamiento 
+datos_train_BOOKS_full <- datos_tsb %>%
+  filter(family == 'BOOKS') |>
+  filter(date >= '2017-01-01')
+
+datos_train_BOOKS_full$sales
+  
+#Ingresar al modelo 
+M_fit<- datos_train_BOOKS_full |>
+  model(
+      ets = ETS(log(sales + 1)),
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+
+submission
+
+
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_EGGS_full <- datos_tsb |>
+  filter(family == 'EGGS')
+
+M_fit<- datos_train_EGGS_full |>
+  model(
+  arima= ARIMA(log(sales+1))
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_HOME_CARE_full <- datos_tsb |>
+  filter(family == 'HOME CARE') |>
+  filter(date >= '2015-07-01')
+library(forecast)
+# Carga el paquete 'feasts'
+library(feasts)
+
+# Usa la función guerrero() para obtener lambda
+lambda <- guerrero(datos_train_HOME_CARE_full$sales)
+
+
+datos_train_HOME_CARE_full$sales_transformados <- BoxCox(datos_train_HOME_CARE_full$sales, lambda)
+
+# Convertir los datos transformados en un objeto tsibble
+datos_transformados_tsbl <- as_tsibble(datos_train_HOME_CARE_full, index = date)
+
+# Ajustar el modelo ARIMA a los datos transformados
+M_fit <- datos_transformados_tsbl |> 
+  model(
+    arima = ARIMA(sales_transformados)
+  )
+
+# Hacer pronóstico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+fcst
+# Aplicar la transformación inversa Box-Cox a las predicciones
+fcst$.mean <- InvBoxCox(fcst$.mean, lambda)
+
+# Unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+# Unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+
+datos_train_LADIESWEAR_full <- datos_tsb |>
+  filter(family == 'LADIESWEAR') |>
+  filter(date >= '2015-07-01')
+
+M_fit<- datos_train_LADIESWEAR_full |>
+  model(
+  arima= ARIMA(log(sales+1))
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_LAWN_AND_GARDEN_full <- datos_tsb |>
+  filter(family == 'LAWN AND GARDEN') |>
+  filter(date >= '2017-01-01')
+
+M_fit<- datos_train_LAWN_AND_GARDEN_full |>
+  model(
+  ets= ETS(sales)
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_LINGERIE_full <- datos_tsb |>
+  filter(family == 'LINGERIE') 
+
+M_fit<- datos_train_LINGERIE_full |>
+  model(
+  arima= ARIMA(log(sales+1)) #si no arima con log, o boxcox
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_LIQUOR_WINE_BEER_full <- datos_tsb |>
+  filter(family == 'LIQUOR,WINE,BEER') 
+
+M_fit<- datos_train_LIQUOR_WINE_BEER_full |>
+  model(
+  arima= ARIMA(log(sales+1)) #si no arima con log, o boxcox
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_MAGAZINES_full <- datos_tsb |>
+  filter(family == 'MAGAZINES') |>
+  filter(date >= '2016-01-01')
+
+library(forecast)
+# Carga el paquete 'feasts'
+library(feasts)
+
+# Usa la función guerrero() para obtener lambda
+lambda <- guerrero(datos_train_MAGAZINES_full$sales)
+
+datos_train_MAGAZINES_full$sales_transformados <- BoxCox(datos_train_MAGAZINES_full$sales, lambda)
+
+# Convertir los datos transformados en un objeto tsibble
+datos_transformados_tsbl <- as_tsibble(datos_train_MAGAZINES_full, index = date)
+
+# Ajustar el modelo ARIMA a los datos transformados
+M_fit <- datos_transformados_tsbl |> 
+  model(
+    ets = ETS(sales_transformados)
+  )
+
+M_fit
+
+# Hacer pronóstico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+# Aplicar la transformación inversa Box-Cox a las predicciones
+fcst$.mean <- InvBoxCox(fcst$.mean, lambda)
+
+# Unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+# Unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_MEATS_full <- datos_tsb |>
+  filter(family == 'MEATS') 
+
+M_fit<- datos_train_MEATS_full |>
+  model(
+  ets= (ARIMA(sales)) #si no arima con log, o boxcox
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_PERSONAL_CARE_full <- datos_tsb |>
+  filter(family == 'PERSONAL CARE') 
+
+M_fit<- datos_train_PERSONAL_CARE_full |>
+  model(
+  arima= ARIMA(sales) #si no arima con log, o boxcox
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+###
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#unir con su id correspondiente
+library(lubridate)
+
+test
+
+# Convert the 'date' column in 'test' dataframe to Date type
+test$date <- as.Date(test$date,format="%m/%d/%Y" )
+
+# Now perform the join
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_PET_SUPPLIES_full <- datos_tsb |>
+  filter(family == 'PET SUPPLIES') |>
+  filter(date >= '2015-07-01')
+
+M_fit<- datos_train_PET_SUPPLIES_full |>
+  model(
+  arima= ARIMA(log(sales+1)) #si no arima con log, o boxcox
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+##aqui
+datos_train_PLAYERS_AND_ELECTRONICS_full <- datos_tsb |>
+  filter(family == 'PLAYERS AND ELECTRONICS') |>
+  filter(date >= '2015-07-01')
+
+library(forecast)
+# Carga el paquete 'feasts'
+library(feasts)
+
+# Usa la función guerrero() para obtener lambda
+lambda <- guerrero(datos_train_PLAYERS_AND_ELECTRONICS_full$sales)
+
+datos_train_PLAYERS_AND_ELECTRONICS_full$sales_transformados <- BoxCox(datos_train_PLAYERS_AND_ELECTRONICS_full$sales, lambda)
+
+# Convertir los datos transformados en un objeto tsibble
+datos_transformados_tsbl <- as_tsibble(datos_train_PLAYERS_AND_ELECTRONICS_full, index = date)
+
+# Ajustar el modelo ARIMA a los datos transformados
+M_fit <- datos_transformados_tsbl |> 
+  model(
+    arima = ARIMA(sales_transformados)
+  )
+
+# Hacer pronóstico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+# Aplicar la transformación inversa Box-Cox a las predicciones
+fcst$.mean <- InvBoxCox(fcst$.mean, lambda)
+
+# Unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+# Unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_POULTRY_full <- datos_tsb |>
+  filter(family == 'POULTRY') |>
+  filter(date >= '2014-01-01')
+
+M_fit<- datos_train_POULTRY_full |>
+  model(
+  ets= ETS(log(sales+1)) #si no arima con log, o boxcox
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_PREPARED_FOODS_full <- datos_tsb |>
+  filter(family == 'PREPARED FOODS') 
+library(forecast)
+# Carga el paquete 'feasts'
+library(feasts)
+
+# Usa la función guerrero() para obtener lambda
+lambda <- guerrero(datos_train_PREPARED_FOODS_full$sales)
+
+datos_train_PREPARED_FOODS_full$sales_transformados <- BoxCox(datos_train_PREPARED_FOODS_full$sales, lambda)
+
+# Convertir los datos transformados en un objeto tsibble
+datos_transformados_tsbl <- as_tsibble(datos_train_PREPARED_FOODS_full, index = date)
+
+# Ajustar el modelo ARIMA a los datos transformados
+M_fit <- datos_transformados_tsbl |> 
+  model(
+    arima = ARIMA(sales_transformados)
+  )
+
+# Hacer pronóstico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+# Aplicar la transformación inversa Box-Cox a las predicciones
+fcst$.mean <- InvBoxCox(fcst$.mean, lambda)
+
+# Unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+# Unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_PRODUCE_full <- datos_tsb |>
+  filter(family == 'PRODUCE') |>
+  filter(date >= '2014-07-01')
+
+M_fit<- datos_train_PRODUCE_full |>
+  model(
+  ets= ETS(log(sales+1)) #si no arima con log, o boxcox
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(ets)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_SCHOOL_AND_OFFICE_SUPPLIES_full <- datos_tsb |>
+  filter(family == 'SCHOOL AND OFFICE SUPPLIES') |>
+  filter(date >= '2015-06-01')
+
+M_fit<- datos_train_SCHOOL_AND_OFFICE_SUPPLIES_full |>
+  model(
+  arima= ARIMA(log(sales+1)) 
+)
+
+M_fit
+
+#Hacer pronostico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+fcst
+
+#unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+#unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+datos_train_SEAFOOD_full <- datos_tsb |>
+  filter(family == 'SEAFOOD') 
+library(forecast)
+# Carga el paquete 'feasts'
+library(feasts)
+
+# Usa la función guerrero() para obtener lambda
+lambda <- guerrero(datos_train_SEAFOOD_full$sales)
+
+datos_train_SEAFOOD_full$sales_transformados <- BoxCox(datos_train_SEAFOOD_full$sales, lambda)
+
+# Convertir los datos transformados en un objeto tsibble
+datos_transformados_tsbl <- as_tsibble(datos_train_SEAFOOD_full, index = date)
+
+# Ajustar el modelo ARIMA a los datos transformados
+M_fit <- datos_transformados_tsbl |> 
+  model(
+    arima = ARIMA(sales_transformados)
+  )
+
+# Hacer pronóstico
+fcst <- M_fit |> 
+  select(c(arima)) |> 
+  forecast(h = 16)
+
+# Aplicar la transformación inversa Box-Cox a las predicciones
+fcst$.mean <- InvBoxCox(fcst$.mean, lambda)
+
+# Unir con su id correspondiente
+submission <- fcst |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+
+# Unir al excel 
+submission |>
+  write_csv("submission.csv", append = TRUE)
+
+
+```
+
+```{r}
+test
+fcst
+```

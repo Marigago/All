@@ -1,0 +1,123 @@
+---
+title: "PBH"
+format: 
+  html:
+    toc: true
+    embed-resources: true
+---
+
+```{r}
+#|message: false
+# The tidyverse library is a collection of packages for data manipulation and visualization.
+library(tidyverse)
+
+# The fpp3 library is part of the Forecasting Principles and Practice (fpp3) package,
+# which provides tools and functions for time series forecasting and analysis.
+library(fpp3)
+
+# The plotly library is used for creating interactive and dynamic visualizations in R.
+library(plotly)
+
+# The patchwork library is used for combining multiple plots into a single, cohesive layout.
+library(patchwork)
+
+# The tidyquant library integrates financial analysis tools and functions into the tidyverse framework.
+library(tidyquant)
+
+```
+
+```{r}
+?aus_accommodation
+aus_accommodation
+```
+
+```{r}
+aus_accommodation|>
+  distinct(State)
+
+tasmania<- aus_accommodation|>
+  filter(State=="Tasmania") |>
+  #select (Date, Takings, Occupancy)
+  #select(Date, Takings:Occupancy)
+  select(-c(State, CPI))|>
+  mutate(
+    'Año unión N°1'=1
+  ) |> 
+  janitor::clean_names()
+  
+tasmania
+
+tasmania |> 
+  glimpse()
+names(tasmania)
+
+#CNTRL+SHIFT+M |> 
+
+```
+
+```{r}
+tasmania |> 
+  autoplot(takings, color='#FFA500', siz=1)
+```
+
+we see that the Takings have an upward **trend**, yearly seasonally, and an increasing variance. We can try to transform the graph to a logarithmic one
+
+```{r}
+tasmania |> 
+  autoplot(log(takings))
+```
+
+```{r}
+tasmania |> 
+  gg_season(log(takings))
+```
+
+```{r}
+tasmania |> 
+  gg_subseries(log(takings))
+```
+
+```{r}
+tasmania |> 
+  gg_tsdisplay(log(takings),plot_type = "auto")
+```
+
+Descargar todo de tidyquant
+
+```{r}
+stocks <- c("MCK","META")
+stocks_data<- tq_get(
+  x=stocks,
+  get="stock.prices",
+  from="2010-01-01",
+  to="2024-01-01"
+)
+
+stocks_data
+stocks_data |> 
+  distinct(symbol)
+
+stocks_data<-stocks_data |> 
+  as_tsibble(index=date, key=symbol)
+stocks_data
+```
+
+```{r}
+stocks_data |> 
+  ggplot(aes(x=date, y=close, color=symbol))+
+  theme_dark()+
+  geom_line()
+```
+
+```{r}
+#|warning:false
+stocks_data |> 
+
+  ggplot(aes(x=date,open=open, high=high, low=low, close=close))+
+  theme_dark()+
+  geom_candlestick()
+```
+
+```{r}
+0
+```

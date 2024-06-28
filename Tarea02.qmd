@@ -1,0 +1,290 @@
+---
+title: "EJEMPLO"
+output:
+  html_document:
+    toc: true
+---
+
+## Serie con estacionalidad y tendencia:
+
+```{r}
+#| message: false
+library(tidyverse)
+library(tsibble)
+library(feasts)
+library(fable)
+library(tsibbledata)
+library(fpp3)
+library(plotly)
+```
+
+```{r}
+aus_production|>
+  autoplot(Tobacco)
+aus_production
+```
+
+```{r}
+rp <- aus_production %>% filter(year(Quarter) >= 1980)
+tobacco_train <- rp %>% filter(year(Quarter) <= 2003)
+tobacco_train %>% autoplot(Tobacco)
+```
+
+```{r}
+#| message: false
+tobacco_train |> 
+  model(stl = STL(Tobacco, robust = TRUE)) |> 
+  components() |> 
+  autoplot() |> 
+  ggplotly()
+```
+
+```{r}
+tobacco_train |> 
+  autoplot(log(Tobacco)) +
+  ggtitle("Log of tabaco")
+```
+
+```{r}
+lm<-tobacco_train|>
+  features(Tobacco, features=guerrero)
+
+tobacco_train |>
+ autoplot(box_cox(Tobacco, lambda=lm))
+
+lm
+
+rp|>
+  autoplot(Tobacco)
+```
+
+```{r}
+tobacco_train|>
+  gg_season(Tobacco)
+```
+
+```{r}
+dcmp <- tobacco_train |> 
+  model(
+    STL((box_cox(Tobacco, lambda=lm)), robust = TRUE)
+  )
+
+dcmp |> 
+  components() |> 
+  autoplot()
+```
+
+```{r}
+lm<-tobacco_train|>
+  features(Tobacco, features=guerrero)
+
+tobaco_fit <- tobacco_train |>
+  model(
+    Drift = RW(Tobacco ~ drift()),
+    Drift_bc = RW(box_cox(Tobacco, lambda = lm) ~ drift()),
+    ETS_mam = ETS(box_cox(Tobacco, lambda = lm) ~ error("M") + trend("A") + season("M"), opt_crit = "lik"),
+    ETS_AAA = ETS(box_cox(Tobacco, lambda = lm) ~ error("A") + trend("A") + season("A"), opt_crit = "lik")
+  )
+tobaco_fit
+```
+
+```{r}
+tobaco_fit |> 
+  select(ETS_mam) |> 
+  report()
+```
+
+```{r}
+
+accuracy(tobaco_fit) |> 
+  arrange(MAPE)
+```
+
+```{r}
+#| warning: false
+
+tobaco_aug <- tobaco_fit |> 
+  augment()
+
+tobaco_aug
+
+tobacco_train |> 
+  autoplot(Tobacco, size = 1) + 
+  autolayer(tobaco_aug, .fitted, size = 1) +
+  facet_wrap(~.model, ncol = 2) +
+  theme(legend.position = "none")
+```
+
+```{r}
+#| warning: true
+
+tobacco_fc <- tobaco_fit |> 
+  forecast(h = 10)
+tobacco_fc
+
+tobacco_fc |> 
+  autoplot(rp, level = NULL)
+
+tobacco_fc |> 
+  autoplot(rp |> filter_index("1980 Q1" ~ .), level = NULL, size = 1)
+
+tobacco_fc |> 
+  autoplot(rp |> filter_index("1980 Q1" ~ .), size = 1) +
+  facet_wrap(~ .model, ncol = 2)
+
+tobacco_fc |> 
+  accuracy(rp) |> 
+  arrange(MAPE)
+```
+
+## Serie sin estacionalidad pero con tendencia:
+
+```{r}
+global_economy
+
+mx_economy <- global_economy %>%
+  filter(Country == "Mexico")
+  
+mx_economy <- subset(mx_economy, select = -Country)
+
+
+mx_economy %>%
+  autoplot(Imports) +
+  ylab("Imports") + xlab("Year")
+```
+
+```{r}
+ge_mx <- mx_economy %>% filter(Year >= 1960)
+ge_train <- ge_mx %>% filter(Year <= 2005)
+ge_train %>% autoplot(Imports)
+
+```
+
+```{r}
+#| message: false
+ge_train |> 
+  model(stl = STL(Imports, robust = TRUE)) |> 
+  components() |> 
+  autoplot() 
+```
+
+Transformación boxcox:
+
+```{r}
+bx_mx<-ge_train|>
+  features(Imports, features=guerrero)
+
+bx_mx
+
+ge_train |>
+ autoplot(box_cox(Imports, lambda=bx_mx))
+```
+
+Descomposición de la serie desestacionalizada:
+
+```{r}
+dcmp_gemx <- ge_train |> 
+  model(
+    STL((box_cox(Imports, lambda=bx_mx)), robust = TRUE)
+  )
+
+dcmp_gemx |> 
+  components() |> 
+  autoplot()
+```
+
+Suavización exp. simple:
+
+```{r}
+ge_fit <- ge_train |>
+  model(
+    Drift = RW(Imports ~ drift()),
+    Drift_bc = RW(box_cox(Imports, lambda = bx_mx) ~ drift()),
+    ETS_mam = ETS(box_cox(Imports, lambda = bx_mx) ~ error("M") + trend("A") + season("M"), opt_crit = "lik"),
+    ETS_AAA = ETS(box_cox(Imports, lambda = bx_mx) ~ error("A") + trend("A") + season("A"), opt_crit = "lik")
+  )
+
+
+
+ge_fit <- ge_train %>%
+  model(
+    Mean = MEAN(Imports),
+    `Naïve` = NAIVE(Imports),
+    Drift = RW(Imports ~ drift())
+  )
+
+ge_fc <- ge_fit %>%
+  forecast(h = 5)
+
+ge_fc
+
+ge_fc %>%
+  autoplot(filter(mx_economy, Year >= 1960), level = NULL) +
+  xlab("Year") + ylab("Megalitres") +
+  ggtitle("Forecasts for quarterly beer production") +
+  guides(colour=guide_legend(title="Forecast"))
+```
+
+Tendencia lineal:
+
+```{r}
+fit <- mx_economy %>%
+  model(AAN   = ETS(Imports ~ error("A") + trend("A") + season("N")),
+        Drift = RW(Imports ~ drift()))
+
+fc <- fit %>% forecast(h = 5)
+
+fc %>% 
+  autoplot(mx_economy %>% filter_index("2000"~.), level = NULL)
+```
+
+```{r}
+fit |> 
+  select(AAN) |> 
+  report()
+```
+
+```{r}
+accuracy(fit) |> 
+  arrange(MAPE)
+```
+
+*EXTRA*
+
+```{r}
+fit %>% 
+  glance()
+
+```
+
+Tendencia amortiguada, extra también:
+
+```{r}
+mx_economy %>%
+  model(
+    `Holt` = ETS(Imports ~ error("A") + trend("A")),
+    `Damped Holt` = ETS(Imports ~ error("A") + trend("Ad"))
+  ) %>%
+  forecast(h = "10 years") %>%
+  autoplot(mx_economy, level = NULL) +
+  ggtitle("Forecasts from Holt's method") + xlab("Year") +
+  ylab("Population of Australia (millions)") +
+  guides(colour = guide_legend(title = "Forecast"))
+```
+
+Errores del pronóstico:
+
+```{r}
+accuracy(ge_fc, ge_mx)
+```
+
+Se puede observar que el modelo que tiene menor error de predicción es Naive (RMSE, MAE, MAPE)
+
+```{r}
+ge_fc %>%
+  filter(.model == "Naïve") %>% 
+  autoplot(filter(mx_economy, Year >= 1960)) +
+  xlab("Year") + ylab("Megalitres") +
+  ggtitle("Forecast for quarterly beer production using the Damped Holt Winters method") +
+  guides(colour=guide_legend(title="Forecast"))
+```

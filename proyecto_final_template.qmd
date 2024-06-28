@@ -1,0 +1,209 @@
+---
+title: "Proyecto final Series de tiempo"
+subtitle: "Equipo "
+author: "integrantes del equipo"
+output:
+  pptx_document:
+    smaller: true
+    scrollable: true
+    theme: solarized
+    slide_number: true
+    transition: slide
+    embed_resources: true
+---
+
+
+
+## pkgs
+
+```{r}
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(tsibble)
+library(lubridate)
+library(ggplot2)
+library(readr)
+library(fable)
+library(fpp3)
+library(patchwork)
+library(dplyr)
+library(tictoc)
+```
+
+## Datos
+
+### Importación
+
+```{r}
+# Definir la ruta del archivo
+archivo <- "C:/Users/maria/Desktop/Segundo_periodo/ST/ST/train.csv/train.csv"
+transactions <- read_csv("C:/Users/maria/Downloads/transactions.csv/transactions.csv")
+oil <- read_csv("C:/Users/maria/Desktop/Segundo_periodo/ST/ST/oil.csv")
+holidays <- read_csv("C:/Users/maria/Desktop/Segundo_periodo/ST/ST/holidays_events.csv")
+stores <- read_csv("C:/Users/maria/Desktop/Segundo_periodo/ST/ST/stores.csv")
+
+# Leer el archivo CSV
+datos <- read_csv(archivo)
+datos$date <- as.Date(datos$date)
+
+datos_tsb <- datos |>
+  as_tsibble(index=date, key=c(store_nbr, family))
+
+datos_tsb |> 
+  has_gaps() |> 
+  filter(.gaps == FALSE)
+
+datos_tsb <- datos_tsb |> 
+  fill_gaps(.full = TRUE, 
+            sales = 0L, 
+            onpromotion = 0L)
+
+transactions$date <- as.Date(transactions$date)
+oil$date <- as.Date(oil$date)
+holidays$date <- as.Date(holidays$date)
+
+oil <- oil %>%
+  fill(dcoilwtico, .direction = "down") %>%
+  fill(dcoilwtico, .direction = "up")
+
+datos_tsb
+
+# Asegúrate de que "store_nbr" es del mismo tipo de dato en ambos dataframes
+stores<-stores[c("store_nbr", "cluster")]
+
+# Une los data.frames por 'store_nbr'
+datos_tsb <- merge(datos_tsb, stores, by = "store_nbr", all.x = TRUE)
+
+# Primero, fusionamos datos_tsb y transactions donde coincidan en store_nbr y date
+datos_tsb <- merge(datos_tsb, transactions, by = c("store_nbr", "date"), all.x = TRUE)
+datos_tsb <- datos_tsb %>% replace_na(list(transactions = 0))
+
+
+# Luego, fusionamos datos_tsb y oil donde coincidan en date
+datos_tsb <- merge(datos_tsb, oil, by = "date", all.x = TRUE)
+datos_tsb <- datos_tsb %>%
+  fill(dcoilwtico, .direction = "down")
+
+
+datos_tsb$holidays <- ifelse(is.na(match(datos_tsb$date, holidays$date)), 0, 1)
+
+#datos_tsb <- datos_tsb|>
+ # as_tsibble(index=date, key=c(store_nbr, family)) 
+
+datos_tsb <- datos_tsb |>
+  as_tsibble(index=date, key=c(store_nbr, family))
+
+```
+
+
+## modelo benchmark
+
+```{r}
+#| echo: true
+
+# Asumiendo que 'sales' es la variable que quieres descomponer
+datos_dcmp <- datos_tsb |> 
+  model(
+    stl = STL(sales ~ season(period = 1), 
+              robust = TRUE)
+  ) |> 
+  components()
+
+# Identificar los valores atípicos
+atipicos <- datos_dcmp |> 
+  filter(
+    remainder < quantile(remainder, 0.25) - 1.5 * IQR(remainder) | 
+      remainder > quantile(remainder, 0.75) + 1.5 * IQR(remainder)
+  )
+atipicos
+
+```
+
+
+
+```{r}
+datos_tsb_sin_outliers <- datos_tsb |> 
+  anti_join(atipicos) |> 
+  fill_gaps()
+datos_tsb_sin_outliers
+datos_tsb_sin_outliers <- datos_tsb_sin_outliers %>%
+  fill(dcoilwtico, .direction = "down")
+
+datos_fill <- datos_tsb_sin_outliers |> 
+  model(ARIMA(sales)) |> 
+  interpolate(datos_tsb_sin_outliers)
+datos_fill
+
+modelo_lineal <- lm(sales ~ holidays + dcoilwtico + transactions, data = datos_tsb_sin_outliers)
+residuos <- residuals(modelo_lineal)
+
+
+
+fit_AAdA <- datos_tsb_sin_outliers |> 
+  model(
+    ets_AAdA = ETS(sales ~ error("A") + trend("Ad") + season("A"), 
+                exogenous = ~ holidays + dcoilwtico + transactions),
+    prophet_auto = prophet(sales ~ holidays + dcoilwtico + transactions),
+    arima = ARIMA(sales ~ holidays + dcoilwtico + transactions)
+  )
+
+fit_AAdA
+
+pronostico1 <- fit_AAdA |> 
+  select(ets_AAdA)
+  forecast(h = 16)
+  
+pronostico_final1 <- fitted(modelo_lineal) + pronostico1$mean
+
+pronostico2 <- fit_AAdA |> 
+  select(prophet_auto)
+  forecast(h = 16)
+  
+pronostico_final2 <- fitted(modelo_lineal) + pronostico2$mean
+
+pronostico3 <- fit_AAdA |> 
+  select(arima)
+  forecast(h = 16)
+  
+pronostico_final3 <- fitted(modelo_lineal) + pronostico3$mean
+
+
+```
+
+```{r}
+test <- read_csv("C:/Users/maria/Downloads/test.csv")
+submission <- pronostico_final1 |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+submission
+
+submission |> 
+  write_csv("submission_1.csv")
+
+submission <- pronostico_final2 |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+submission
+
+submission |> 
+  write_csv("submission_2.csv")
+
+submission <- pronostico_final3 |> 
+  left_join(test, by = c("date", "store_nbr", "family")) |> 
+  as_tibble() |> 
+  select(id, .mean) |> 
+  rename(sales = .mean)
+submission
+
+submission |> 
+  write_csv("submission_3.csv")
+
+
+```
+

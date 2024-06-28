@@ -1,0 +1,134 @@
+---
+title: "TAREA2"
+format: html
+editor: visual
+---
+
+```{r}
+#| message: false
+library(tidyverse)
+library(tsibble)
+library(feasts)
+library(fable)
+library(tsibbledata)
+library(fpp3)
+library(plotly)
+```
+
+```{r}
+aus_production|>
+  autoplot(Tobacco)
+aus_production
+```
+
+```{r}
+rp <- aus_production %>% filter(year(Quarter) >= 1980)
+tobacco_train <- rp %>% filter(year(Quarter) <= 2003)
+tobacco_train %>% autoplot(Tobacco)
+```
+
+```{r}
+#| message: false
+tobacco_train |> 
+  model(stl = STL(Tobacco, robust = TRUE)) |> 
+  components() |> 
+  autoplot() |> 
+  ggplotly()
+```
+
+```{r}
+tobacco_train |> 
+  autoplot(log(Tobacco)) +
+  ggtitle("Log of tabaco")
+```
+
+```{r}
+lm<-tobacco_train|>
+  features(Tobacco, features=guerrero)
+
+tobacco_train |>
+ autoplot(box_cox(Tobacco, lambda=lm))
+
+rp|>
+  autoplot(Tobacco)
+```
+
+```{r}
+tobacco_train|>
+  gg_season(Tobacco)
+```
+
+```{r}
+dcmp <- tobacco_train |> 
+  model(
+    STL((box_cox(Tobacco, lambda=lm)), robust = TRUE)
+  )
+
+dcmp |> 
+  components() |> 
+  autoplot()
+```
+
+```{r}
+lm<-tobacco_train|>
+  features(Tobacco, features=guerrero)
+
+tobaco_fit <- tobacco_train |>
+  model(
+    Drift = RW(Tobacco ~ drift()),
+    Drift_bc = RW(box_cox(Tobacco, lambda = lm) ~ drift()),
+    ETS_mam = ETS(box_cox(Tobacco, lambda = lm) ~ error("M") + trend("A") + season("M"), opt_crit = "lik"),
+    ETS_AAA = ETS(box_cox(Tobacco, lambda = lm) ~ error("A") + trend("A") + season("A"), opt_crit = "lik")
+  )
+tobaco_fit
+```
+
+```{r}
+tobaco_fit |> 
+  select(ETS_mam) |> 
+  report()
+```
+
+```{r}
+
+accuracy(tobaco_fit) |> 
+  arrange(MAPE)
+```
+
+```{r}
+###TENGO DUDAS###
+#| warning: false
+
+tobaco_aug <- tobaco_fit |> 
+  augment()
+
+tobaco_aug
+
+tobacco_train |> 
+  autoplot(Tobacco, size = 1) + 
+  autolayer(tobaco_aug, .fitted, size = 1) +
+  facet_wrap(~.model, ncol = 2) +
+  theme(legend.position = "none")
+```
+
+```{r}
+#| warning: true
+
+tobacco_fc <- tobaco_fit |> 
+  forecast(h = 10)
+tobacco_fc
+
+tobacco_fc |> 
+  autoplot(rp, level = NULL)
+
+tobacco_fc |> 
+  autoplot(rp |> filter_index("1980 Q1" ~ .), level = NULL, size = 1)
+
+tobacco_fc |> 
+  autoplot(rp |> filter_index("1980 Q1" ~ .), size = 1) +
+  facet_wrap(~ .model, ncol = 2)
+
+tobacco_fc |> 
+  accuracy(rp) |> 
+  arrange(MAPE)
+```

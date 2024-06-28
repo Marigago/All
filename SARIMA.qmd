@@ -1,0 +1,110 @@
+---
+title: "sarima_tarea"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(fpp3)
+library(patchwork)
+```
+
+```{r}
+h02 <- PBS %>%
+  filter(ATC2 == "H02") %>%
+  summarise(Cost = sum(Cost)/1e6)
+h02 %>%
+  mutate(log(Cost)) %>%
+  gather() %>%
+  ggplot(aes(x = Month, y = value)) +
+  geom_line() +
+  facet_grid(key ~ ., scales = "free_y") +
+  xlab("Year") + ylab("") +
+  ggtitle("Cortecosteroid drug scripts (H02)")
+```
+
+```{r}
+h02 %>% gg_tsdisplay(difference(log(Cost), 12), plot_type='partial', lag_max = 48)
+
+```
+
+```{r}
+h02_train <- h02 %>% 
+  filter(year(Month) <= 2005)
+```
+
+```{r}
+h02 %>%
+  mutate(log(Cost)) %>%
+  gather() %>%
+  ggplot(aes(x = Month, y = value)) +
+  geom_line() +
+  facet_grid(key ~ ., scales = "free_y") +
+  xlab("Year") + ylab("") +
+  ggtitle("Cortecosteroid drug scripts (H02)")
+```
+
+```{r}
+h02 %>% gg_tsdisplay(log(Cost) %>% difference(12) %>% difference(), plot_type='partial', lag_max = 48)
+```
+
+```{r}
+if (!require(forecast)) {
+  install.packages("forecast")
+  library(forecast)
+}
+
+h02 <- PBS %>%
+  filter(ATC2 == "H02") %>%
+  summarise(Cost = sum(Cost)/1e6)
+
+# Calcular la PACF de la serie temporal de costos
+pacf_values <- pacf(h02$Cost)
+
+library(ggplot2)
+# Graficaggplot2::# Graficar la autocorrelación parcial (PACF)
+autoplot(pacf_values) +
+  ggtitle("Partial Autocorrelation Function (PACF)") +
+  xlab("Lag") +
+  ylab("Partial Autocorrelation")
+```
+
+```{r}
+h02 <- PBS %>%
+  filter(ATC2 == "H02") %>%
+  summarise(Cost = sum(Cost)/1e6)
+
+# Calcular la ACF de la serie temporal de costos
+acf_values <- acf(h02$Cost)
+
+# Graficar la autocorrelación (ACF)
+plot(acf_values, main = "Autocorrelation Function (ACF)")
+```
+
+```{r}
+library(dplyr)
+fit <- h02 %>%
+  model(
+    arima311 = ARIMA(log(Cost) ~ pdq(3,1,1) + PDQ(2,1,0)),
+    arima210 = ARIMA(log(Cost) ~ pdq(2,1,0) + PDQ(2,1,0)),
+    arima110 = ARIMA(log(Cost) ~ pdq(1,1,0) + PDQ(2,1,0)),
+    arima211 = ARIMA(log(Cost) ~ pdq(2,1,1) + PDQ(2,1,0)),
+    arima212 = ARIMA(log(Cost) ~ pdq(2,1,2) + PDQ(2,1,0)),
+    arima311_ = ARIMA(log(Cost) ~ pdq(3,1,1) + PDQ(2,1,1)),
+    arima210_ = ARIMA(log(Cost) ~ pdq(2,1,0) + PDQ(2,1,1)),
+    arima110_ = ARIMA(log(Cost) ~ pdq(1,1,0) + PDQ(2,1,1)),
+    arima211_ = ARIMA(log(Cost) ~ pdq(2,1,1) + PDQ(2,1,1)),
+    arima212_ = ARIMA(log(Cost) ~ pdq(2,1,2) + PDQ(2,1,1)),
+  )
+
+glance(fit) %>% 
+  arrange(AICc)
+```
+
+```{r}
+fit %>% 
+  select(arima110) %>% 
+  augment() %>%
+  features(.resid, ljung_box, lag = 24, dof = 4)
+```

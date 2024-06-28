@@ -1,0 +1,115 @@
+---
+title: "EJEMPLO"
+output:
+  html_document:
+    toc: true
+---
+
+```{r}
+library(tidyverse)
+library(fpp3)
+#library(tidyquant)
+library(shiny)
+#library(magrittr)
+```
+
+```{r}
+tabal<-as_tsibble(mutate(tidyquant::tq_get(x = "MEXSLRTTO01IXOBM", get = "economic.data", 
+    from = "1986-01-01", to = "2023-03-01"), date = yearmonth(date)), 
+    index = date, key = symbol)
+tabal
+```
+
+```{r}
+tabla_train<- tabal |> 
+  filter_index("Jan.2000" ~ "Dec. 2009")
+
+```
+
+```{r}
+tabla_train
+```
+
+```{r}
+tabla_train |> 
+  autoplot(price)
+```
+
+```{r}
+lambda <- tabla_train |> 
+  features(price, features = guerrero) |> 
+  pull(lambda_guerrero)
+lambda
+
+tabla_train |> 
+  autoplot(box_cox(price, lambda))
+```
+
+```{r}
+#Gráfica solo para observar los datos y ver las tendecias o estacionalidades, como se ve parece que la transformación no afecta realmente. 
+
+tabla_train |> 
+  gg_season(price)
+
+tabla_train |> 
+  gg_season(box_cox(price, lambda))
+```
+
+```{r}
+tabla_train |> 
+  model(
+    stl = STL(box_cox(price, lambda), robust = TRUE)
+  ) |> 
+  components() |> 
+  autoplot()
+```
+
+```{r}
+tabla_fit <- tabla_train |> 
+  model(
+    combi_bc = decomposition_model(
+      STL(box_cox(price, lambda), robust = TRUE),
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ),
+    combi = decomposition_model(
+      STL(price, robust = TRUE),
+      SNAIVE(season_year),
+      RW(season_adjust ~ drift())
+    ))
+
+tabla_fit
+
+```
+
+```{r}
+tabla_fit |> 
+  select(combi) |> 
+  gg_tsresiduals()
+
+tabla_fit |> 
+  select(combi_bc) |> 
+  gg_tsresiduals()
+```
+
+```{r}
+tabla_fit |> 
+  augment() |> 
+  features(.innov, ljung_box, dof = 0, lag = 24) #24 porque es 2 por h y h es igual a 12 meses 
+```
+
+```{r}
+accuracy(tabla_fit) |> 
+  arrange(MAPE)
+```
+
+```{r}
+tabla_fc <- tabla_fit |> 
+  forecast(h = 12)
+tabla_fc
+```
+
+```{r}
+tabla_fc |> 
+  autoplot(tabal |> filter_index(~ "dec. 2020"))
+```
